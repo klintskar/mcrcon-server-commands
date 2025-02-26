@@ -1,30 +1,57 @@
 import time
 import re
 import os
-from mcrcon import MCRcon
 import threading
+from mcrcon import MCRcon
 
-HOST = "localhost"  # Change to server IP if running remotely
+# RCON server configuration
+HOST = "localhost"
 PORT = 25575
 PASSWORD = "Schlevden69"
 
-COORDS_FILE = "coords.txt"
+# Global RCON connection
+rcon_connection = None  
 
-LOG_FILE_PATH = r"C:\Users\jacob\Desktop\testserver\logs\latest.log"
+# Global thread variable
+position_checker_thread = None  
 
-# Function to send RCON commands
+# File paths for saved data
+COORDS_FILE = os.path.join(os.path.dirname(__file__), "coords.txt") 
+LOG_FILE_PATH = os.path.join(os.path.dirname(__file__), "logs", "latest.log")
+LAST_POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "last_positions.txt") 
+
+# Defined marked areas with names, coordinates, and messages
+MARKED_AREAS = {
+    "Castle of Schlevden": {"coords": ((-690, 100, -150), (-770, 130, -210)), "message": "Welcome to Schlevden's castle!"},
+    "Nice": {"coords": ((69, 69, 69), (70, 70, 70)), "message": "Nice!"}
+}
+
 def send_rcon_command(command):
-    """Send a command to the Minecraft server via RCON."""
-    with MCRcon(HOST, PASSWORD, port=PORT) as mcr:
-        response = mcr.command(command)
-        print(f"Executed: {command}")
-        return response
+    """Sends an RCON command using a persistent connection."""
+    global rcon_connection
+    
+    if rcon_connection is None:
+        try:
+            rcon_connection = MCRcon(HOST, PASSWORD, port=PORT)
+            rcon_connection.connect()
+            print("Connected to RCON")
+        except Exception as e:
+            print(f"Failed to connect to RCON: {e}")
+            return None
 
-# Function to monitor the chat log
+    try:
+        response = rcon_connection.command(command)
+        if not is_thread.value:
+            print(f"Executed: {command}")
+        return response
+    except Exception as e:
+        print(f"RCON command failed: {e}")
+        return None
+
 def tail_file(filename):
-    """Continuously reads new lines from the log file."""
+    """Monitors a log file and yields new lines as they are written."""
     with open(filename, "r", encoding="utf-8") as file:
-        file.seek(0, 2)  # Move to end of file
+        file.seek(0, 2)  
         while True:
             line = file.readline()
             if not line:
@@ -32,30 +59,18 @@ def tail_file(filename):
                 continue
             yield line
 
-# Function to process chat messages
 def process_chat_message(line):
-    match = re.search(r"<(.*?)> (.*)", line)  # Matches "<PlayerName> Message"
+    """Processes player chat messages and extracts commands."""
+    match = re.search(r"<(.*?)> (.*)", line)  
     if match:
         player, message = match.groups()
-        print(f"Detected chat: {player}: {message}")
-        if message.startswith("!"):  # Only process messages that start with "!"
-            handle_command(player, message[1:])  # Remove "!" and process
-
-import time
-import threading
-import os
-
-# Define marked areas: Name, Coordinates (2 corners), Message
-MARKED_AREAS = {
-    "Jacobs House": {"coords": ((100, 64, 200), (120, 80, 220)), "message": "Welcome to Jacob's House!"},
-    "Spawn Area": {"coords": ((0, 64, 0), (20, 80, 20)), "message": "You have entered Spawn!"},
-    "Hidden Cave": {"coords": ((-50, 20, -50), (-30, 40, -30)), "message": "You discovered a Hidden Cave!"}
-}
-
-LAST_POSITIONS_FILE = "last_positions.txt"  # Stores last triggered messages
+        if not is_thread.value:
+            print(f"Detected chat: {player}: {message}")
+        if message.startswith("!"):  
+            handle_command(player, message[1:])  
 
 def load_last_positions():
-    """Loads the last recorded player positions and areas they triggered."""
+    """Loads the last recorded player positions and areas they entered."""
     if not os.path.exists(LAST_POSITIONS_FILE):
         return {}
 
@@ -64,14 +79,12 @@ def load_last_positions():
         for line in file:
             parts = line.strip().split(":")
             if len(parts) == 2:
-                player = parts[0].strip()  # Ensure no extra spaces
-                last_area = parts[1].strip()  # Strip any spaces around area names
+                player, last_area = parts[0].strip(), parts[1].strip()
                 last_positions[player] = last_area
     return last_positions
 
-
 def save_last_position(player, area_name):
-    """Saves the last recorded area the player entered to prevent message spam."""
+    """Saves the last recorded area the player entered."""
     last_positions = load_last_positions()
     last_positions[player] = area_name
 
@@ -80,77 +93,69 @@ def save_last_position(player, area_name):
             file.write(f"{p}:{a}\n")
 
 def check_player_positions():
-    """Continuously checks if players enter a marked area and sends messages once."""
-    last_positions = load_last_positions()  # Load saved positions at startup
+    """Checks player positions and sends messages if they enter a marked area."""
+    global rcon_connection
+    
+    last_positions = {}
 
-    while True:
-        response = send_rcon_command("list")
-        if ":" in response:
-            players = response.split(":")[-1].strip().split(", ")
-        else:
-            players = []
+    try:
+        if rcon_connection is None:
+            send_rcon_command("list")
+            return  
 
-        for player in players:
-            if not player:
-                continue  # Skip empty names
+        while True:
+            response = rcon_connection.command("list")
+            players = response.split(":")[-1].strip().split(", ") if ":" in response else []
 
-            coords = get_player_coords(player)
-            if not coords:
-                continue  # Skip if no position found
+            for player in players:
+                if not player:
+                    continue
 
-            x, y, z = coords
-            print(f"Checking {player}'s position: {x}, {y}, {z}")
+                coords = get_player_coords(player)
+                if not coords:
+                    continue
 
-            current_area = None  # Track which area the player is in
+                x, y, z = coords
+                current_area = None
 
-            for area_name, area in MARKED_AREAS.items():
-                (x1, y1, z1), (x2, y2, z2) = area["coords"]
+                for area_name, area in MARKED_AREAS.items():
+                    (x1, y1, z1), (x2, y2, z2) = area["coords"]
+                    if min(x1, x2) <= x <= max(x1, x2) and min(y1, y2) <= y <= max(y1, y2) and min(z1, z2) <= z <= max(z1, z2):
+                        current_area = area_name
+                        break
 
-                x_min, x_max = min(x1, x2), max(x1, x2)
-                y_min, y_max = min(y1, y2), max(y1, y2)
-                z_min, z_max = min(z1, z2), max(z1, z2)
+                last_area = last_positions.get(player, None)
+                if current_area and last_area != current_area:
+                    rcon_connection.command(f"tell {player} {MARKED_AREAS[current_area]['message']}")
+                    last_positions[player] = current_area
+                    save_last_position(player, current_area)
 
-                if x_min <= x <= x_max and y_min <= y <= y_max and z_min <= z <= z_max:
-                    current_area = area_name  # The player is inside this area
-                    break  # Stop checking once an area is found
+            time.sleep(2)
 
-            last_area = last_positions.get(player, "None")  # Default to "None" if not found
-
-            if current_area and last_area != current_area:  # Only send message if it's a new area
-                send_rcon_command(f"tell {player} {MARKED_AREAS[current_area]['message']}")
-                print(f"Sent message to {player}: {MARKED_AREAS[current_area]['message']}")
-                last_positions[player] = current_area
-                save_last_position(player, current_area)  # Save new area
-
-            elif not current_area:  # If the player is not in any area, reset last position
-                last_positions[player] = "None"
-
-        time.sleep(2)  # Check every 2 seconds
-
+    except Exception as e:
+        print(f"Error in position checker: {e}")
 
 def get_player_coords(player):
-    """Gets the player's current coordinates using RCON."""
+    """Gets a player's coordinates using RCON."""
     response = send_rcon_command(f"data get entity {player} Pos")
-    print(f"DEBUG: Full RCON Response -> {repr(response)}")  # Shows raw response
-
     numbers = re.findall(r'[-+]?[0-9]*.?[0-9]+d', response)
-    cleaned_numbers = [float(num[:-1]) for num in numbers]
-    x, y, z = cleaned_numbers
-    x, y, z = round(float(x)), round(float(y)), round(float(z))
+    
+    if len(numbers) < 3:
+        print(f"Error: Could not extract 3 position values for {player}.")
+        return None
 
-    print(f"Extracted and rounded coordinates: {x}, {y}, {z}")  # Debugging output
+    x, y, z = map(round, [float(num[:-1]) for num in numbers])
+    if not is_thread.value:
+        print(f"Extracted and rounded coordinates: {x}, {y}, {z}")
     return x, y, z
 
-    # Return early to prevent crashing while testing
-    return None
-
 def save_coords(player, name, x, y, z):
-    """Saves a coordinate under the player's name in coords.txt."""
+    """Saves a coordinate under the player's name."""
     with open(COORDS_FILE, "a", encoding="utf-8") as file:
         file.write(f"{player},{name},{x},{y},{z}\n")
 
 def get_coords(player):
-    """Returns a dictionary of saved coordinates for a specific player."""
+    """Retrieves saved coordinates for a player."""
     coords = {}
     if not os.path.exists(COORDS_FILE):
         return coords
@@ -158,22 +163,18 @@ def get_coords(player):
     with open(COORDS_FILE, "r", encoding="utf-8") as file:
         for line in file:
             parts = line.strip().split(",")
-
-            # Ensure the line has exactly 5 parts (player, name, x, y, z)
             if len(parts) != 5:
-                print(f"Skipping malformed line: {line.strip()}")
-                continue  # Skip this line
-
+                if not is_thread.value:
+                    print(f"Skipping malformed line: {line.strip()}")
+                continue  
             saved_player, name, x, y, z = parts
-
-            # Only add coordinates that belong to the requesting player
             if saved_player == player:
                 coords[name] = (x, y, z)
 
     return coords
 
 def remove_coords(player, name):
-    """Removes a specific coordinate for a player."""
+    """Removes a saved coordinate for a player."""
     if not os.path.exists(COORDS_FILE):
         return False
 
@@ -195,32 +196,44 @@ def remove_coords(player, name):
 
     return removed
 
-# Function to handle commands
 def handle_command(player, command_str):
     """Parses and executes commands from chat."""
-    print(f"Handling command: {command_str} from {player}")  # Debug line
+    if not is_thread.value:
+        print(f"Handling command: {command_str} from {player}")  
 
     parts = command_str.split()
-    if len(parts) == 0:
+    if not parts:
         return
 
-    command = parts[0].lower()  # Extract command name
-    args = parts[1:]  # Extract arguments
+    command = parts[0].lower()  
+    args = parts[1:]  
 
-    if command == "broadcast" and len(args) > 0:
-        message = " ".join(args)
-        send_rcon_command(f"say {message}")
+    if command == "broadcast" and args:
+        send_rcon_command(f"say {' '.join(args)}")
 
     elif command == "help":
-        command_list = [
+        help_messages = [
             "!broadcast <message> - Send a server-wide message",
             "!coords help - Show all coords commands",
+            "!weather <clear | rain | thunder> - Sets the weather",
             "!help - Show this command list"
         ]
-        for cmd in command_list:
-            send_rcon_command(f"tell {player} {cmd}")
+        for msg in help_messages:
+            send_rcon_command(f"tell {player} {msg}")
+
+    elif command == "weather" and len(args) == 1:
+        weather_type = args[0]
+        if weather_type in ["clear", "rain", "thunder"]:
+            send_rcon_command(f"weather {weather_type}")
+            send_rcon_command(f"tell {player} Weather changed to {weather_type}.")
+        else:
+            send_rcon_command(f"tell {player} Invalid weather type.")
     
-    elif command == "coords" and len(args) > 0:
+    elif command == "coords":
+        if not args:
+            send_rcon_command(f"tell {player} Use '!coords help' for usage.")
+            return
+        
         sub_command = args[0].lower()
 
         if sub_command == "add" and len(args) == 5:
@@ -230,16 +243,12 @@ def handle_command(player, command_str):
 
         elif sub_command == "add" and len(args) == 3 and args[1] == "current":
             name = args[2]
-            print(f"Command recognized: !coords add current {name} from {player}")  # Debugging
-
-            coords = get_player_coords(player)  # This should trigger a debug message
+            coords = get_player_coords(player)
             if coords:
                 x, y, z = coords
-                print(f"Coordinates fetched: {x}, {y}, {z}")  # Debugging
                 save_coords(player, name, x, y, z)
-                send_rcon_command(f"tell {player} Saved {name} at your current location ({x}, {y}, {z}).")
+                send_rcon_command(f"tell {player} Saved {name} at your current location {coords}.")
             else:
-                print(f"Failed to fetch coordinates for {player}")  # Debugging
                 send_rcon_command(f"tell {player} Could not get your current location.")
 
         elif sub_command == "remove" and len(args) == 2:
@@ -255,18 +264,14 @@ def handle_command(player, command_str):
                 send_rcon_command(f"tell {player} You have no saved locations you lobotomized ant.")
             else:
                 send_rcon_command(f"tell {player} Your saved locations:")
-                for name, coord in coords.items():  # coord is now a tuple (x, y, z)
-                    if len(coord) == 3:  # Extra safety check
-                        x, y, z = coord
-                        send_rcon_command(f"tell {player} {name}: ({x}, {y}, {z})")
-                    else:
-                        send_rcon_command(f"tell {player} Error reading saved location '{name}'")
+                for name, (x, y, z) in coords.items():
+                    send_rcon_command(f"tell {player} {name}: ({x}, {y}, {z})")
         
         elif sub_command == "help":
             help_message = [
                 "Coords Command Usage:",
                 "!coords add <name> <x> <y> <z> - Save a coordinate with a name",
-                "!coords add current <name> - Save current currdinates with a name",
+                "!coords add <name> current - Save current currdinates with a name",
                 "!coords remove <name> - Remove a saved coordinate",
                 "!coords show - Show all your saved coordinates",
                 "!coords help - Show this help message"
@@ -276,14 +281,21 @@ def handle_command(player, command_str):
 
     else:
         send_rcon_command(f"tell {player} Unknown command or wrong format!")
+    
+is_thread = threading.local()
+is_thread.value = False
 
-# Start the position checker in a separate thread
-position_checker_thread = threading.Thread(target=check_player_positions, daemon=True)
-position_checker_thread.start()
+def thread_function():
+    """Runs the position checker in a separate thread."""
+    is_thread.value = True
+    check_player_positions()
 
-print("Position checker started. Monitoring player locations...")
+if position_checker_thread is None or not position_checker_thread.is_alive():
+    position_checker_thread = threading.Thread(target=thread_function, daemon=True)
+    position_checker_thread.start()
+    print("Position checker started. Monitoring player locations...")
 
-# Start monitoring the chat log
 print("Listening for commands in chat...")
+print(is_thread.value)
 for log_line in tail_file(LOG_FILE_PATH):
     process_chat_message(log_line)
