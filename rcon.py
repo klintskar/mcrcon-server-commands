@@ -230,9 +230,6 @@ def handle_command(player, command_str):
             send_rcon_command(f"tell {player} Invalid weather type.")
     
     elif command == "coords":
-        if not args:
-            send_rcon_command(f"tell {player} Use '!coords help' for usage.")
-            return
         
         sub_command = args[0].lower()
 
@@ -241,8 +238,8 @@ def handle_command(player, command_str):
             save_coords(player, name, x, y, z)
             send_rcon_command(f"tell {player} Saved {name} at ({x}, {y}, {z}).")
 
-        elif sub_command == "add" and len(args) == 3 and args[1] == "current":
-            name = args[2]
+        elif sub_command == "add" and len(args) == 3 and args[2] == "current":
+            name = args[1]
             coords = get_player_coords(player)
             if coords:
                 x, y, z = coords
@@ -278,6 +275,10 @@ def handle_command(player, command_str):
             ]
             for msg in help_message:
                 send_rcon_command(f"tell {player} {msg}")
+
+        elif not args:
+            send_rcon_command(f"tell {player} Use '!coords help' for usage.")
+            return
 
     else:
         send_rcon_command(f"tell {player} Unknown command or wrong format!")
