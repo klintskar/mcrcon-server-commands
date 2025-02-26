@@ -230,6 +230,9 @@ def handle_command(player, command_str):
             send_rcon_command(f"tell {player} Invalid weather type.")
     
     elif command == "coords":
+        if not args:
+            send_rcon_command(f"tell {player} Use '!coords help' for usage.")
+            return
         
         sub_command = args[0].lower()
 
