@@ -279,7 +279,7 @@ def handle_command(player, command_str):
             for msg in help_message:
                 send_rcon_command(f"tell {player} {msg}")
 
-        elif not args:
+        else:
             send_rcon_command(f"tell {player} Use '!coords help' for usage.")
             return
 
