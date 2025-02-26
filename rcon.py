@@ -296,6 +296,5 @@ if position_checker_thread is None or not position_checker_thread.is_alive():
     print("Position checker started. Monitoring player locations...")
 
 print("Listening for commands in chat...")
-print(is_thread.value)
 for log_line in tail_file(LOG_FILE_PATH):
     process_chat_message(log_line)
