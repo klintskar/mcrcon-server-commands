@@ -289,7 +289,7 @@ def handle_command(player, command_str):
         ai_responses = ai_communication.send_ai_request(ai_prompt)
 
         for response_part in ai_responses:
-            send_rcon_command(f"say {' '.join(response_part)}")
+            send_rcon_command(f"say {''.join(response_part)}")
 
 
     else:
