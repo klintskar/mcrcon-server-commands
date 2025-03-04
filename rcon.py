@@ -2,6 +2,7 @@ import time
 import re
 import os
 import threading
+import ai_communication
 from mcrcon import MCRcon
 
 # RCON server configuration
@@ -282,6 +283,14 @@ def handle_command(player, command_str):
         else:
             send_rcon_command(f"tell {player} Use '!coords help' for usage.")
             return
+
+    elif command == "ai" and args:
+        ai_prompt = " ".join(args)
+        ai_responses = ai_communication.send_ai_request(ai_prompt)
+
+        for response_part in ai_responses:
+            send_rcon_command(f"tell {player} AI: {response_part}")
+
 
     else:
         send_rcon_command(f"tell {player} Unknown command or wrong format!")
