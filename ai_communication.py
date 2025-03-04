@@ -13,7 +13,7 @@ def send_ai_request(user_message, max_tokens=500):
         response = requests.post(API_URL, json={"prompt": full_prompt, "max_tokens": max_tokens})
         if response.status_code == 200:
             full_response = response.json().get("content", "No response received from AI.")
-            return split_message(full_response, 250)  # Split into chunks of 250 characters
+            return split_message(full_response, 200)  # Split into chunks of 200 characters
         else:
             return [f"AI request failed with status code {response.status_code}"]
     except Exception as e:
