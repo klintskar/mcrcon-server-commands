@@ -3,3 +3,4 @@
 
 # Allow only rcon.py
 !rcon.py
+!ai_communication.py
